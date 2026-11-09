@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">AutoCLiKD</string>
+    <string name="accessibility_service_description">選択したアプリの起動とアクティブなウィンドウを確認し、画面上の連打メニューを表示してタップを実行します。画面内の文章や入力内容は取得しません。</string>
+</resources>
