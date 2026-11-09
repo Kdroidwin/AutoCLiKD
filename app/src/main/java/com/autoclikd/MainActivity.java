@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
     private static final String KEY_TARGET_LABEL = "target_label";
     private static final String KEY_POPUP_ENABLED = "popup_enabled";
     private static final String KEY_HIDE_ON_LEAVE = "hide_on_leave";
+    private static final String KEY_SHOW_POSITION_BUTTON = "show_position_button";
     private static final String KEY_INTERVAL = "interval_ms";
     private static final String KEY_JITTER = "jitter_enabled";
 
@@ -51,6 +52,7 @@ public class MainActivity extends Activity {
     private SeekBar intervalSeekBar;
     private Switch popupSwitch;
     private Switch hideSwitch;
+    private Switch positionSwitch;
     private Switch jitterSwitch;
 
     @Override
@@ -143,6 +145,7 @@ public class MainActivity extends Activity {
         appCard.addView(targetRow);
         popupSwitch = addSwitchRow(appCard, "起動時に連打メニューを表示", "選択したアプリを開くとポップアップを表示", true, KEY_POPUP_ENABLED);
         hideSwitch = addSwitchRow(appCard, "アプリを離れたらメニューを隠す", "初期設定では、対象アプリ以外に移ると自動で閉じます", true, KEY_HIDE_ON_LEAVE);
+        positionSwitch = addSwitchRow(appCard, "位置ボタンを表示", "オフなら連打ボタンだけを表示（初期設定）", false, KEY_SHOW_POSITION_BUTTON);
         addCard(page, appCard);
 
         LinearLayout permissions = card(surface, outline);
@@ -237,7 +240,7 @@ public class MainActivity extends Activity {
         });
         addCard(page, appearance);
 
-        TextView footer = text("AutoCLiKD  ·  オープンソース  ·  v1.0.1", 12, muted, false);
+        TextView footer = text("AutoCLiKD  ·  オープンソース  ·  v1.1.0", 12, muted, false);
         footer.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams footerParams = new LinearLayout.LayoutParams(-1, -2);
         footerParams.topMargin = dp(6);

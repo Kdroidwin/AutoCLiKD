@@ -22,18 +22,16 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.TextView;
 
 import java.util.Locale;
 import java.util.Random;
 
 public class AutoClickAccessibilityService extends AccessibilityService {
     private static final String KEY_TARGET_PACKAGE = "target_package";
-    private static final String KEY_TARGET_LABEL = "target_label";
     private static final String KEY_POPUP_ENABLED = "popup_enabled";
     private static final String KEY_HIDE_ON_LEAVE = "hide_on_leave";
+    private static final String KEY_SHOW_POSITION_BUTTON = "show_position_button";
     private static final String KEY_INTERVAL = "interval_ms";
     private static final String KEY_JITTER = "jitter_enabled";
 
@@ -44,12 +42,12 @@ public class AutoClickAccessibilityService extends AccessibilityService {
     private SharedPreferences prefs;
     private String foregroundPackage = "";
     private boolean tapping;
-    private boolean dismissedForLaunch;
     private boolean hidePending;
     private View popup;
     private LinearLayout popupRoot;
-    private TextView intervalLabel;
-    private Button tapButton;
+    private IconButton startButton;
+    private IconButton positionButton;
+    private boolean popupShowsPositionButton;
     private WindowManager.LayoutParams popupParams;
     private PointSelectionView pointSelectionView;
     private WindowManager.LayoutParams pickerParams;
@@ -71,7 +69,6 @@ public class AutoClickAccessibilityService extends AccessibilityService {
         hidePending = false;
         if (prefs != null && prefs.getBoolean(KEY_HIDE_ON_LEAVE, true)
                 && !targetPackage().equals(foregroundPackage)) {
-            dismissedForLaunch = false;
             stopTapping();
             removePopup();
         }
@@ -122,7 +119,6 @@ public class AutoClickAccessibilityService extends AccessibilityService {
             if (hidePending) {
                 handler.removeCallbacks(delayedHide);
                 hidePending = false;
-                dismissedForLaunch = false;
             }
             reconcilePopup();
         } else if (prefs.getBoolean(KEY_HIDE_ON_LEAVE, true)) {
@@ -173,7 +169,6 @@ public class AutoClickAccessibilityService extends AccessibilityService {
         handler.removeCallbacks(delayedHide);
         hidePending = false;
         foregroundPackage = getPackageName();
-        dismissedForLaunch = false;
         if (prefs != null && prefs.getBoolean(KEY_HIDE_ON_LEAVE, true)) {
             stopTapping();
             removePopup();
@@ -190,9 +185,12 @@ public class AutoClickAccessibilityService extends AccessibilityService {
             removePopup();
             return;
         }
-        if (onTarget && !dismissedForLaunch) {
+        if (onTarget) {
             if (popup == null) showPopup();
-            else updatePopupLabels();
+            else if (popupShowsPositionButton != prefs.getBoolean(KEY_SHOW_POSITION_BUTTON, false)) {
+                removePopup();
+                showPopup();
+            } else updatePopupButtons();
         } else if (!onTarget && prefs.getBoolean(KEY_HIDE_ON_LEAVE, true)) {
             stopTapping();
             removePopup();
@@ -202,81 +200,35 @@ public class AutoClickAccessibilityService extends AccessibilityService {
     private void showPopup() {
         if (popup != null || windowManager == null) return;
         popupRoot = new LinearLayout(this);
-        popupRoot.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(14);
-        popupRoot.setPadding(pad, dp(11), pad, pad);
+        popupRoot.setOrientation(LinearLayout.HORIZONTAL);
+        int pad = dp(4);
+        popupRoot.setPadding(pad, pad, pad, pad);
         GradientDrawable card = new GradientDrawable();
-        card.setColor(Color.rgb(19, 19, 19));
-        card.setCornerRadius(dp(18));
-        card.setStroke(dp(1), Color.rgb(65, 65, 65));
+        card.setColor(0xEE171717);
+        card.setCornerRadius(dp(16));
+        card.setStroke(dp(1), Color.rgb(55, 55, 55));
         popupRoot.setBackground(card);
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = overlayText("AutoCLiKD", 16, Color.WHITE, true);
-        header.addView(title, new LinearLayout.LayoutParams(0, dp(34), 1));
-        TextView close = overlayText("×", 25, Color.LTGRAY, false);
-        close.setGravity(Gravity.CENTER);
-        header.addView(close, new LinearLayout.LayoutParams(dp(34), dp(34)));
-        close.setOnClickListener(v -> {
-            dismissedForLaunch = true;
-            stopTapping();
-            removePopup();
-        });
-        popupRoot.addView(header);
-        header.setOnTouchListener(new View.OnTouchListener() {
-            private int startX;
-            private int startY;
-            private float downX;
-            private float downY;
-            @Override public boolean onTouch(View view, MotionEvent event) {
-                if (popupParams == null) return false;
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    startX = popupParams.x;
-                    startY = popupParams.y;
-                    downX = event.getRawX();
-                    downY = event.getRawY();
-                    return true;
-                }
-                if (event.getAction() == MotionEvent.ACTION_MOVE) {
-                    popupParams.x = Math.max(0, startX + Math.round(event.getRawX() - downX));
-                    popupParams.y = Math.max(0, startY + Math.round(event.getRawY() - downY));
-                    try { windowManager.updateViewLayout(popupRoot, popupParams); } catch (Exception ignored) { }
-                    return true;
-                }
-                return event.getAction() == MotionEvent.ACTION_UP;
-            }
-        });
-
-        TextView target = overlayText(prefs.getString(KEY_TARGET_LABEL, "対象アプリ"), 13, Color.LTGRAY, false);
-        LinearLayout.LayoutParams targetParams = new LinearLayout.LayoutParams(-1, -2);
-        targetParams.topMargin = dp(2);
-        popupRoot.addView(target, targetParams);
-        intervalLabel = overlayText("間隔 500 ms ・ 位置は画面中央", 12, Color.rgb(175, 175, 175), false);
-        LinearLayout.LayoutParams intervalParams = new LinearLayout.LayoutParams(-1, -2);
-        intervalParams.topMargin = dp(5);
-        intervalParams.bottomMargin = dp(11);
-        popupRoot.addView(intervalLabel, intervalParams);
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        tapButton = overlayButton(tapping ? "停止" : "連打開始", true);
-        actions.addView(tapButton, new LinearLayout.LayoutParams(0, dp(42), 1));
-        TextView position = overlayText("位置", 13, Color.WHITE, true);
-        position.setGravity(Gravity.CENTER);
-        position.setBackground(overlayShape(Color.rgb(48, 48, 48), Color.rgb(72, 72, 72)));
-        LinearLayout.LayoutParams positionParams = new LinearLayout.LayoutParams(dp(68), dp(42));
-        positionParams.leftMargin = dp(8);
-        actions.addView(position, positionParams);
-        position.setOnClickListener(v -> beginPointSelection());
-        tapButton.setOnClickListener(v -> {
+        startButton = new IconButton(false);
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(dp(44), dp(44));
+        popupRoot.addView(startButton, buttonParams);
+        startButton.setOnClickListener(v -> {
             if (tapping) stopTapping();
             else startTapping();
-            updatePopupLabels();
+            updatePopupButtons();
         });
-        popupRoot.addView(actions);
+
+        popupShowsPositionButton = prefs.getBoolean(KEY_SHOW_POSITION_BUTTON, false);
+        positionButton = null;
+        if (popupShowsPositionButton) {
+            positionButton = new IconButton(true);
+            LinearLayout.LayoutParams positionParams = new LinearLayout.LayoutParams(dp(44), dp(44));
+            positionParams.leftMargin = dp(4);
+            popupRoot.addView(positionButton, positionParams);
+            positionButton.setOnClickListener(v -> beginPointSelection());
+        }
 
         popupParams = new WindowManager.LayoutParams(
-                dp(280), WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT);
@@ -286,23 +238,19 @@ public class AutoClickAccessibilityService extends AccessibilityService {
         popup = popupRoot;
         try {
             windowManager.addView(popup, popupParams);
-            updatePopupLabels();
+            updatePopupButtons();
         } catch (Exception e) {
             popup = null;
             popupRoot = null;
+            startButton = null;
+            positionButton = null;
             popupParams = null;
         }
     }
 
-    private void updatePopupLabels() {
-        if (intervalLabel == null || popup == null) return;
-        int interval = Math.max(50, prefs.getInt(KEY_INTERVAL, 500));
-        float x = prefs.getFloat("tap_x", -1f);
-        float y = prefs.getFloat("tap_y", -1f);
-        String location = x < 0 || y < 0 ? "画面中央" : String.format(Locale.JAPAN, "%.0f%% / %.0f%%", x * 100, y * 100);
-        String variation = prefs.getBoolean(KEY_JITTER, false) ? " ・ ±15%ゆらぎ" : "";
-        intervalLabel.setText("間隔 " + interval + " ms" + variation + "\n位置 " + location);
-        if (tapButton != null) tapButton.setText(tapping ? "停止" : "連打開始");
+    private void updatePopupButtons() {
+        if (startButton != null) startButton.refresh();
+        if (positionButton != null) positionButton.refresh();
     }
 
     private void startTapping() {
@@ -315,7 +263,7 @@ public class AutoClickAccessibilityService extends AccessibilityService {
     private void stopTapping() {
         tapping = false;
         handler.removeCallbacks(tapLoop);
-        if (tapButton != null) tapButton.setText("連打開始");
+        updatePopupButtons();
     }
 
     private void dispatchTap() {
@@ -339,8 +287,9 @@ public class AutoClickAccessibilityService extends AccessibilityService {
         }
         popup = null;
         popupRoot = null;
-        intervalLabel = null;
-        tapButton = null;
+        startButton = null;
+        positionButton = null;
+        popupShowsPositionButton = false;
         popupParams = null;
     }
 
@@ -378,37 +327,65 @@ public class AutoClickAccessibilityService extends AccessibilityService {
         pickerParams = null;
     }
 
-    private TextView overlayText(String value, int size, int color, boolean bold) {
-        TextView text = new TextView(this);
-        text.setText(value);
-        text.setTextSize(size);
-        text.setTextColor(color);
-        text.setGravity(Gravity.CENTER_VERTICAL);
-        if (bold) text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        return text;
-    }
-
-    private Button overlayButton(String value, boolean prominent) {
-        Button button = new Button(this);
-        button.setText(value);
-        button.setTextSize(13);
-        button.setAllCaps(false);
-        button.setTextColor(prominent ? Color.BLACK : Color.WHITE);
-        button.setPadding(dp(8), 0, dp(8), 0);
-        button.setBackground(overlayShape(prominent ? Color.WHITE : Color.rgb(48, 48, 48), Color.TRANSPARENT));
-        return button;
-    }
-
-    private GradientDrawable overlayShape(int background, int stroke) {
-        GradientDrawable shape = new GradientDrawable();
-        shape.setColor(background);
-        shape.setCornerRadius(dp(12));
-        if (stroke != Color.TRANSPARENT) shape.setStroke(dp(1), stroke);
-        return shape;
-    }
-
     private int dp(float value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private final class IconButton extends View {
+        private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final boolean location;
+
+        IconButton(boolean location) {
+            super(AutoClickAccessibilityService.this);
+            this.location = location;
+            setClickable(true);
+            setFocusable(true);
+            updateDescription();
+        }
+
+        private void updateDescription() {
+            setContentDescription(location ? "タップ位置を選ぶ" : (tapping ? "連打を停止" : "連打開始"));
+        }
+
+        void refresh() {
+            updateDescription();
+            invalidate();
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float density = getResources().getDisplayMetrics().density;
+            float cx = getWidth() / 2f;
+            float cy = getHeight() / 2f;
+            float radius = Math.min(getWidth(), getHeight()) / 2f - dp(1);
+
+            iconPaint.setStyle(Paint.Style.FILL);
+            iconPaint.setColor(location || tapping ? Color.rgb(48, 48, 48) : Color.WHITE);
+            canvas.drawCircle(cx, cy, radius, iconPaint);
+            iconPaint.setColor(location || tapping ? Color.WHITE : Color.BLACK);
+            iconPaint.setStrokeWidth(2f * density);
+            iconPaint.setStrokeCap(Paint.Cap.ROUND);
+            if (location) {
+                iconPaint.setStyle(Paint.Style.STROKE);
+                canvas.drawCircle(cx, cy, 6.5f * density, iconPaint);
+                canvas.drawLine(cx, cy - 14f * density, cx, cy - 9f * density, iconPaint);
+                canvas.drawLine(cx, cy + 9f * density, cx, cy + 14f * density, iconPaint);
+                canvas.drawLine(cx - 14f * density, cy, cx - 9f * density, cy, iconPaint);
+                canvas.drawLine(cx + 9f * density, cy, cx + 14f * density, cy, iconPaint);
+            } else if (tapping) {
+                iconPaint.setStyle(Paint.Style.FILL);
+                float half = 5f * density;
+                canvas.drawRoundRect(cx - half, cy - half, cx + half, cy + half, density, density, iconPaint);
+            } else {
+                iconPaint.setStyle(Paint.Style.FILL);
+                Path triangle = new Path();
+                triangle.moveTo(cx - 4f * density, cy - 9f * density);
+                triangle.lineTo(cx + 9f * density, cy);
+                triangle.lineTo(cx - 4f * density, cy + 9f * density);
+                triangle.close();
+                canvas.drawPath(triangle, iconPaint);
+            }
+        }
     }
 
     private final class PointSelectionView extends View {
